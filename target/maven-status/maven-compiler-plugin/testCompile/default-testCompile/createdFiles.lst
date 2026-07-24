@@ -1,0 +1,5 @@
+com/aba02/Aba02ApplicationTests.class
+com/aba02/api/ProductsControllerTest.class
+com/aba02/model/ProductTest.class
+com/aba02/service/ProductServiceTest.class
+com/aba02/api/ProductsTest.class
