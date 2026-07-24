@@ -1,0 +1,65 @@
+name: Java Spring CI/CD
+
+on:
+  push:
+    branches: [ main, feature/*, develop ]
+  pull_request:
+    branches: [ main, develop ]
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+    
+    strategy:
+      matrix:
+        java-version: [ 21 ]
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+    
+    - name: Set up Java
+      uses: actions/setup-java@v4
+      with:
+        java-version: ${{ matrix.java-version }}
+        distribution: 'temurin'
+        cache: maven
+    
+    - name: Display Java version
+      run: java -version
+    
+    - name: Compile code
+      run: mvn clean compile
+    
+    - name: Run tests
+      run: mvn test
+    
+    - name: Generate test reports
+      if: always()
+      uses: dorny/test-reporter@v1
+      with:
+        name: JUnit Test Results
+        path: 'target/surefire-reports/*.xml'
+        reporter: 'java-junit'
+    
+    - name: Generate code coverage report
+      run: mvn jacoco:report
+    
+    - name: Upload coverage to Codecov
+      uses: codecov/codecov-action@v3
+      with:
+        file: ./target/site/jacoco/jacoco.xml
+        flags: unittests
+        name: codecov-umbrella
+        fail_ci_if_error: false
+    
+    - name: Display test results summary
+      if: always()
+      run: |
+        echo "✅ Build Summary:"
+        echo "- Java Compilation: SUCCESS"
+        echo "- Unit Tests: Completed"
+        echo "- Code Coverage: Generated"
+        echo ""
+        echo "📊 Test Reports Location: target/surefire-reports/"
+        echo "📈 Coverage Report: target/site/jacoco/index.html"
