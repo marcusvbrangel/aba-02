@@ -31,7 +31,7 @@ docker run hello-world
 
 --------------------------------------------------------------
 
-docker image build -t aba02:v1 .
+docker image build -t aba02:0.0.2 .
 
 docker image ls
                                                                                                                                                                                                                                     i Info →   U  In Use
@@ -39,9 +39,9 @@ IMAGE                ID             DISK USAGE   CONTENT SIZE   EXTRA
 aba02:v1             ebd67344c6cf        799MB          261MB
 hello-world:latest   c3cbe1cc1aa5       25.9kB         9.49kB    U
 
-docker container run -it aba02:v1
+docker container run -it aba02:0.0.2
 
-docker container run -d -p 8084:8080 --name meu-container-aba02 aba02:v1
+docker container run -d -p 8084:8080 --name meu-container-aba02 aba02:0.0.2
 
 docker logs -f meu-container-aba02
 
