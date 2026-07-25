@@ -1,10 +1,18 @@
 name: Java Spring CI/CD
 
 on:
-  push:
-    branches: [ main, feature/*, develop ]
   pull_request:
-    branches: [ main, develop ]
+    branches:
+      - main
+  push:
+    branches:
+      - main
+
+#on:
+#  push:
+#    branches: [ main, feature/*, develop ]
+#  pull_request:
+#    branches: [ main, develop ]
 
 jobs:
   build-and-test:
