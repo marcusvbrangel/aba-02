@@ -10,7 +10,7 @@ import com.aba02.model.Product;
 import com.aba02.service.ProductService;
 
 @RestController
-@RequestMapping("/products")
+@RequestMapping("/api/v1/products")
 public class ProductsController {
 
     @Autowired
