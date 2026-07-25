@@ -17,6 +17,11 @@ class ProductServiceTest {
         productService = new ProductService();
     }
 
+//    @Test
+//    void testeComFalhaProposital() {
+//        fail("Este teste falhou de propósito para validação.");
+//    }
+
     @Test
     void testGetAllProductsReturnsNotNull() {
         List<Product> products = productService.getAllProducts();
