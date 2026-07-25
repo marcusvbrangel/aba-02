@@ -1,0 +1,69 @@
+
+--------------------------------------------------------------
+
+Docker Engine
+https://docs.docker.com/engine/
+
+Install Docker Engine
+https://docs.docker.com/engine/install
+
+Install Docker Engine on Ubuntu
+https://docs.docker.com/engine/install/ubuntu/
+
+Install using the apt repository
+
+
+sudo apt update
+sudo apt install docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
+
+docker --version
+Docker version 29.6.2, build dfc4efb
+
+sudo usermod -aG docker $USER
+
+newgrp docker
+
+docker run hello-world
+
+
+
+
+
+--------------------------------------------------------------
+
+docker image build -t aba02:v1 .
+
+docker image ls
+                                                                                                                                                                                                                                    i Info →   U  In Use
+IMAGE                ID             DISK USAGE   CONTENT SIZE   EXTRA
+aba02:v1             ebd67344c6cf        799MB          261MB
+hello-world:latest   c3cbe1cc1aa5       25.9kB         9.49kB    U
+
+docker container run -it aba02:v1
+
+docker container run -d -p 8084:8080 --name meu-container-aba02 aba02:v1
+
+docker logs -f meu-container-aba02
+
+curl http://localhost:8084/api/v1/products
+
+--------------------------------------------------------------
+
+
+
+--------------------------------------------------------------
+
+
+--------------------------------------------------------------
+
+
+
+
+--------------------------------------------------------------
+
+
+
+
+--------------------------------------------------------------
+
+
