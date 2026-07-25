@@ -9,14 +9,19 @@ on:
     branches:
       - main
 
-# Cancela uma execução antiga da mesma branch quando um novo commit é enviado.
+# Cancela a execução anterior da mesma branch quando um novo commit é enviado.
 concurrency:
   group: ci-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
 env:
   JAVA_VERSION: "21"
+
+  # Nome da imagem criada apenas dentro do runner.
   LOCAL_IMAGE: aba02-ci:${{ github.sha }}
+
+  # Nome e caminho do JAR produzido pelo Maven.
+  JAR_FILE: target/aba02-0.0.1-SNAPSHOT.jar
 
 jobs:
 
@@ -24,7 +29,7 @@ jobs:
   # 1. Compilação
   # 2. Testes unitários
   # 3. Testes de integração
-  # 4. Cobertura
+  # 4. Cobertura de código
   # ============================================================
   java-validation:
     name: Java validation
@@ -39,10 +44,10 @@ jobs:
         uses: actions/checkout@v6
 
       - name: Set up Java 21
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@v5
         with:
-          java-version: ${{ env.JAVA_VERSION }}
           distribution: temurin
+          java-version: ${{ env.JAVA_VERSION }}
           cache: maven
 
       - name: Display Java and Maven versions
@@ -50,30 +55,36 @@ jobs:
           java -version
           mvn -version
 
-      # A fase verify executa:
-      # compile -> unit tests -> integration tests -> package -> verify
+      # clean verify executa:
       #
-      # Os testes de integração precisam estar configurados com
-      # Maven Failsafe no pom.xml.
-      - name: Compile and run all tests
+      # - limpeza do projeto;
+      # - compilação;
+      # - testes unitários;
+      # - testes de integração, caso o Failsafe esteja configurado;
+      # - empacotamento do JAR;
+      # - verificações configuradas no Maven.
+      #
+      # jacoco:report gera o relatório de cobertura.
+      - name: Compile, test and package application
         run: |
           mvn \
             --batch-mode \
             --no-transfer-progress \
-            clean verify
+            clean verify jacoco:report
 
       - name: Publish unit test report
         if: always()
-        uses: dorny/test-reporter@v2
+        uses: dorny/test-reporter@v2.2.0
         with:
           name: Unit test results
           path: target/surefire-reports/*.xml
           reporter: java-junit
           fail-on-error: true
+          fail-on-empty: false
 
       - name: Publish integration test report
         if: always()
-        uses: dorny/test-reporter@v2
+        uses: dorny/test-reporter@v2.2.0
         with:
           name: Integration test results
           path: target/failsafe-reports/*.xml
@@ -81,31 +92,37 @@ jobs:
           fail-on-error: true
           fail-on-empty: false
 
-      - name: Verify JaCoCo report
+      - name: Verify JaCoCo coverage report
         run: |
-          test -f target/site/jacoco/jacoco.xml
+          if [ ! -f target/site/jacoco/jacoco.xml ]; then
+            echo "JaCoCo XML report was not generated."
+            exit 1
+          fi
 
-          echo "JaCoCo XML report:"
+          echo "JaCoCo report generated successfully:"
           ls -lh target/site/jacoco/jacoco.xml
 
-      - name: Upload coverage to Codecov
-        uses: codecov/codecov-action@v5
-        with:
-          files: target/site/jacoco/jacoco.xml
-          flags: unit-and-integration-tests
-          fail_ci_if_error: false
-          token: ${{ secrets.CODECOV_TOKEN }}
+      - name: Verify application JAR
+        run: |
+          if [ ! -f "${JAR_FILE}" ]; then
+            echo "Application JAR was not generated: ${JAR_FILE}"
+            exit 1
+          fi
 
-      # O JAR será usado pelo job de container.
+          echo "Application JAR generated successfully:"
+          ls -lh "${JAR_FILE}"
+
+      # O próximo job será executado em outro runner.
+      # Por isso, o JAR precisa ser enviado como artifact.
       - name: Upload application JAR
         uses: actions/upload-artifact@v4
         with:
           name: application-jar
-          path: target/aba02-0.0.1-SNAPSHOT.jar
+          path: ${{ env.JAR_FILE }}
           if-no-files-found: error
           retention-days: 1
 
-      - name: Upload test and coverage reports
+      - name: Upload Java reports
         if: always()
         uses: actions/upload-artifact@v4
         with:
@@ -118,10 +135,10 @@ jobs:
           retention-days: 7
 
   # ============================================================
-  # 5. Análise de dependências
+  # 5. Análise das dependências modificadas pela Pull Request
   #
-  # Esse job compara as dependências introduzidas pela PR.
-  # Portanto, ele executa somente em pull_request.
+  # Essa análise compara as dependências anteriores com as novas.
+  # Portanto, ela executa somente em Pull Requests.
   # ============================================================
   dependency-review:
     name: Dependency review
@@ -141,10 +158,7 @@ jobs:
           fail-on-severity: high
 
   # ============================================================
-  # 6. Análise estática e segurança
-  #
-  # CodeQL procura padrões de vulnerabilidade no código Java.
-  # build-mode none funciona para projeto somente Java.
+  # 6. Análise estática e segurança do código Java
   # ============================================================
   codeql:
     name: CodeQL security analysis
@@ -174,12 +188,12 @@ jobs:
   # ============================================================
   # 7. Validação do Dockerfile
   # 8. Build da imagem
-  # 9. Scan de vulnerabilidades
+  # 9. Scan de vulnerabilidades da imagem
   # 10. Inicialização do container
-  # 11. Smoke test
+  # 11. Smoke test da aplicação
   #
-  # Em push para main, a imagem validada também é publicada
-  # no GitHub Container Registry.
+  # Depois de um push na main, normalmente causado por um merge,
+  # a mesma imagem validada será publicada no GHCR.
   # ============================================================
   container-validation:
     name: Container validation
@@ -190,8 +204,8 @@ jobs:
       - dependency-review
       - codeql
 
-    # Na main, dependency-review será skipped porque só funciona em PR.
-    # Isso não deve impedir o job de container.
+    # No evento push, dependency-review será skipped.
+    # Isso não deve impedir o restante do pipeline.
     if: |
       always() &&
       needs.java-validation.result == 'success' &&
@@ -209,93 +223,79 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v6
 
+      # Recupera o JAR criado no job java-validation.
       - name: Download application JAR
         uses: actions/download-artifact@v4
         with:
           name: application-jar
           path: target
 
-      - name: Display downloaded JAR
-        run: ls -lh target/
+      - name: Verify downloaded JAR
+        run: |
+          if [ ! -f "${JAR_FILE}" ]; then
+            echo "Downloaded JAR was not found: ${JAR_FILE}"
+            exit 1
+          fi
+
+          echo "Downloaded JAR:"
+          ls -lh "${JAR_FILE}"
 
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v4
+        uses: docker/setup-buildx-action@v3
 
-      # Essa verificação analisa a configuração do build sem criar
-      # efetivamente a imagem.
+      # Analisa o Dockerfile e a configuração do build sem publicar imagem.
       - name: Validate Dockerfile and build configuration
-        uses: docker/build-push-action@v7
+        uses: docker/build-push-action@v6
         with:
           context: .
           call: check
 
-      # --load disponibiliza a imagem no Docker local do runner.
-      # Isso permite usar a mesma imagem no Trivy e no docker run.
-      - name: Build container image
+      # A imagem é carregada no Docker local do runner.
+      # Dessa forma, poderá ser analisada pelo Trivy e iniciada pelo docker run.
+      - name: Build local container image
         run: |
           docker buildx build \
             --load \
+            --label "org.opencontainers.image.source=${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}" \
+            --label "org.opencontainers.image.revision=${GITHUB_SHA}" \
             --tag "${LOCAL_IMAGE}" \
             .
 
+          echo "Container image created successfully:"
           docker image inspect "${LOCAL_IMAGE}"
 
-      - name: Scan image vulnerabilities with Trivy
-        uses: aquasecurity/trivy-action@0.35.0
+      # Bloqueia o pipeline quando encontrar vulnerabilidades corrigíveis
+      # com severidade HIGH ou CRITICAL.
+      - name: Scan container image with Trivy
+        uses: aquasecurity/trivy-action@v0.36.0
         with:
           image-ref: ${{ env.LOCAL_IMAGE }}
-          format: table
+          scanners: vuln
           vuln-type: os,library
           severity: HIGH,CRITICAL
           ignore-unfixed: true
+          format: table
           exit-code: "1"
 
-      # Banco temporário usado somente durante o smoke test.
-      - name: Create Docker test network
-        run: docker network create aba02-ci-network
-
-      - name: Start PostgreSQL test container
-        run: |
-          docker run --detach \
-            --name aba02-ci-postgres \
-            --network aba02-ci-network \
-            --env POSTGRES_DB=aba02 \
-            --env POSTGRES_USER=aba02 \
-            --env POSTGRES_PASSWORD=aba02 \
-            postgres:16-alpine
-
-      - name: Wait for PostgreSQL
-        run: |
-          for attempt in {1..30}; do
-            if docker exec aba02-ci-postgres \
-              pg_isready --username=aba02 --dbname=aba02
-            then
-              echo "PostgreSQL is ready."
-              exit 0
-            fi
-
-            echo "Waiting for PostgreSQL: attempt ${attempt}/30"
-            sleep 2
-          done
-
-          echo "PostgreSQL did not become ready."
-          docker logs aba02-ci-postgres
-          exit 1
-
+      # Inicia apenas o container da aplicação.
+      # Não há PostgreSQL, Redis ou qualquer outro serviço externo.
       - name: Start application container
         run: |
-          docker run --detach \
+          docker run \
+            --detach \
             --name aba02-ci-app \
-            --network aba02-ci-network \
             --publish 8080:8080 \
-            --env SPRING_DATASOURCE_URL=jdbc:postgresql://aba02-ci-postgres:5432/aba02 \
-            --env SPRING_DATASOURCE_USERNAME=aba02 \
-            --env SPRING_DATASOURCE_PASSWORD=aba02 \
             "${LOCAL_IMAGE}"
 
+          echo "Application container started:"
+          docker ps --filter "name=aba02-ci-app"
+
+      # Espera a aplicação iniciar e consulta o endpoint de saúde.
       - name: Smoke test application
         run: |
           for attempt in {1..30}; do
+            echo "Smoke test attempt ${attempt}/30"
+
             if curl \
               --fail \
               --silent \
@@ -307,25 +307,29 @@ jobs:
               exit 0
             fi
 
-            echo "Waiting for application: attempt ${attempt}/30"
+            # Verifica se o container encerrou durante a inicialização.
+            if [ "$(docker inspect \
+              --format='{{.State.Running}}' \
+              aba02-ci-app)" != "true" ]
+            then
+              echo "Application container stopped unexpectedly."
+              docker logs aba02-ci-app
+              exit 1
+            fi
+
             sleep 3
           done
 
-          echo "Application did not become healthy."
+          echo "Application did not become healthy within the timeout."
           docker logs aba02-ci-app
           exit 1
 
-      - name: Display application logs
-        if: always()
-        run: docker logs aba02-ci-app || true
-
-      # --------------------------------------------------------
-      # Publicação no GHCR
+      # ========================================================
+      # Publicação no GitHub Container Registry — GHCR
       #
-      # Não publica imagens de Pull Requests.
-      # Publica somente após um push na main, normalmente causado
-      # pelo merge de uma Pull Request.
-      # --------------------------------------------------------
+      # Estas etapas não executam em Pull Requests.
+      # Executam somente em push para a main.
+      # ========================================================
       - name: Define GHCR image name
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         run: |
@@ -333,13 +337,18 @@ jobs:
 
       - name: Log in to GitHub Container Registry
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-        uses: docker/login-action@v4
+        uses: docker/login-action@v3
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      # Faz push da mesma imagem que foi analisada, iniciada e testada.
+      # Publica exatamente a imagem que foi:
+      #
+      # - construída;
+      # - analisada pelo Trivy;
+      # - inicializada;
+      # - aprovada pelo smoke test.
       - name: Publish validated image to GHCR
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         run: |
@@ -352,13 +361,19 @@ jobs:
           docker push "${SHA_IMAGE}"
           docker push "${LATEST_IMAGE}"
 
-          echo "Published images:"
+          echo "Images published successfully:"
           echo "${SHA_IMAGE}"
           echo "${LATEST_IMAGE}"
 
-      - name: Clean up containers
+      # Os logs são exibidos mesmo quando alguma etapa posterior falha.
+      - name: Display application logs
+        if: always()
+        run: |
+          echo "Application container logs:"
+          docker logs aba02-ci-app || true
+
+      # Remove o container de teste do runner.
+      - name: Clean up application container
         if: always()
         run: |
           docker rm --force aba02-ci-app || true
-          docker rm --force aba02-ci-postgres || true
-          docker network rm aba02-ci-network || true

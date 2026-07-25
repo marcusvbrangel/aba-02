@@ -43,7 +43,7 @@ class ProductsControllerTest {
 
         assertNotNull(response);
         assertEquals(2, response.getBody().size());
-        assertEquals(200, response.getStatusCodeValue());
+        assertEquals(200, response.getStatusCode().value());
     }
 
     @Test
@@ -64,7 +64,7 @@ class ProductsControllerTest {
 
         var response = productsController.getAll();
 
-        assertEquals(200, response.getStatusCodeValue());
+        assertEquals(200, response.getStatusCode().value());
         assertTrue(response.getStatusCode().is2xxSuccessful());
     }
 
@@ -110,7 +110,7 @@ class ProductsControllerTest {
 
         assertNotNull(response);
         assertEquals(0, response.getBody().size());
-        assertEquals(200, response.getStatusCodeValue());
+        assertEquals(200, response.getStatusCode().value());
     }
 
     @Test

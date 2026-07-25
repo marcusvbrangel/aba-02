@@ -1,11 +1,12 @@
-FROM eclipse-temurin:21
+FROM eclipse-temurin:21-jre-jammy
 
 WORKDIR /app
 
 RUN groupadd --system appgroup \
     && useradd --system --gid appgroup appuser
 
-COPY --chown=appuser:appgroup target/aba02-0.0.1-SNAPSHOT.jar app.jar
+COPY --chown=appuser:appgroup \
+    target/aba02-0.0.1-SNAPSHOT.jar app.jar
 
 USER appuser
 
